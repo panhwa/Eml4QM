@@ -1,0 +1,13 @@
+[Control]
+debuglevel = 0
+
+[Mail]
+localmailpath = D:/MyMails
+popserver = pop3.mail.com
+mailuser = username
+mailpw = password
+stopafter = 0
+saveattachment = True
+lastmailno = 0
+mailcount = 0
+
