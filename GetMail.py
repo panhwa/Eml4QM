@@ -11,7 +11,8 @@
 # 注意：修改了python包中的文件：
 # 1.因为邮件长度超过了poplib中 _MAXLINE的定义，直接修改了pyton2.7的poplib.py _MAXLINE=65536
 # 2.python2.7 mail模块处理特殊媒体类型时，会简单返回 text/plain，修改了 email/message.py, 改为 text/unknown 方便捕获
-# 
+#
+# todo：同时读多个服务器
 import sys
 import inspect
 import poplib
@@ -28,6 +29,7 @@ from HTMLParser import HTMLParser
 ENV_INFO = ""
 DEBUG = False # read from ini
 JUST_LOCAL_EML = False
+EML_PATH_NAME = "Eml/"
 
 def Usage():
     print "Please edit GetMail.ini first."
@@ -48,7 +50,7 @@ def ErrorLog(ErrInfo):
     ErrorFile.writelines(WriteStr)
     ErrorFile.writelines("\n")
     ErrorFile.close()
- 
+
 def MyUnicode(Data,ChrCode):
     global ENV_INFO
     global DEBUG
@@ -60,32 +62,12 @@ def MyUnicode(Data,ChrCode):
         print "ChrCode=[",ChrCode,"]",
     if not ChrCode or ChrCode == "":# or ChrCode.lower().find("utf8") >= 0
         ChrCode = "utf-8"
-    #gb2312内码不完备，转换会报错 改为->gb18030
-    # if ChrCode.lower().find("gb2312") >= 0:
-        # ChrCode = "gb18030"
-    # if DEBUG:
-        # print "Fixed ChrCode=[",ChrCode,"]"
     try:
         unic = unicode(Data,ChrCode,'replace')
     except Exception,e:
         unic = Data
         ErrorLog("MyUnicode error, "+ str(e)+", source data:")
         ErrorLog(Data)
-    # ^承认原文中字符集基本正确，replace/ignore 才是最佳方案
-    # except:
-        # try:
-            # unic = unicode(Data,"utf-8")
-        # except:
-            # try:
-                # unic = unicode(Data,"gbk")
-            # except:
-                # try:
-                    # #unic = unicode(Data,"gb18030",'replace') # 排除上述，最可能是中文18030，最后一把
-                    # unic = unicode(Data,"gb18030",'strict') # 排除上述，最可能是中文18030，最后一把
-                # except Exception,e:
-                    # unic = Data
-                    # ErrorLog("MyUnicode error, "+ str(e)+", source data:")
-                    # ErrorLog(Data)
     return unic
 
 # 解码邮件编码格式：=?gb18030?=...
@@ -96,12 +78,11 @@ def MyMailDecode(HeaderString):
     if not HeaderString:
         HeaderString = "<N/A>"
         # return None
-    #试图修复qq邮箱"撤回邮件"没有编码头=?utf-8?的bug
-    #Todo,这样判断不够严谨，暂时没有发现例外
     #找到编码的子串
     p = re.compile('=\?.*?\?[qQbB]\?.*?\?=')
     rtStr = ""
     StrB = 0
+    #缺省utf-8，试图修复qq邮箱"撤回邮件"没有编码头=?utf-8?的bug
     ChrCode = "utf-8"
     #for 每个子串
     for match in p.finditer(HeaderString):
@@ -192,14 +173,14 @@ def main(argv):
     print "CurrentPath=",CurrentPath
     # 1、读配置文件-------------------------------------
     config = ConfigParser.ConfigParser()
-    config.read(CurrentPath+"GetAttach.ini")
+    config.read(CurrentPath+"GetMail.ini")
     PopServer = config.get("Mail","PopServer")
     MailUser = config.get("Mail","MailUser")
     MailPW = config.get("Mail","MailPW") #todo：密码加密
     StopAfter = int(config.get("Mail","StopAfter"))
     SaveAttachment = bool(config.get("Mail","SaveAttachment"))
     LastMailNo = int(config.get("Mail","LastMailNo"))
-    if PopServer ==" pop.exmail.qq.com":
+    if PopServer =="pop.mail":
         Usage()
         raw_input("Press enter to exit > ")
         return
@@ -210,10 +191,10 @@ def main(argv):
 
     LocalMailPath = config.get("Mail","LocalMailPath")
     LocalMailPath = LocalMailPath + "/" + PopServer + "/" + MailUser + "/"
-    EmlFolder = LocalMailPath + "Eml/"
+    EmlFolder = LocalMailPath + EML_PATH_NAME
     if(LastMailNo<0):
         LastMailNo = 0
-    
+
     print "DEBUG =",str(DEBUG)
     print "StopAfter =",str(StopAfter)
     print "SaveAttachment =",str(SaveAttachment)
@@ -231,7 +212,7 @@ def main(argv):
         num = len(Pop3.list()[1])
         print "Mail count =",num
         config.set("Mail","MailCount",num)
-        config.write(open(CurrentPath+"GetAttach.ini", "w"))
+        config.write(open(CurrentPath+"GetMail.ini", "w"))
     except socket.error as e:
         ErrorLog("socket error:"+str(e))
         print "连接服务器失败，仅本地缓存"
@@ -239,7 +220,7 @@ def main(argv):
     except Exception,e:
         ErrorLog("connect pop3 server error:"+str(e))
         #todo
-        
+
     #检索邮件范围
     if StopAfter > 0:
         rge = range(LastMailNo+1,LastMailNo+StopAfter+1,1)
@@ -263,7 +244,7 @@ def main(argv):
             continue
         #保存邮件本地缓存
         SaveEmlFile(Msg,EmlFolder,MailNo,False)#todo:配置Rewrite
-        
+
         # 保存邮件体
         txtname = LocalMailPath + str(MailNo) +"-mail.txt"
         ftxt = codecs.open(txtname, 'wb', encoding='utf-8')
@@ -283,9 +264,9 @@ def main(argv):
                 ErrorLog("Mail header["+ h +"] write error - : ")
                 ErrorLog(str(e))
                 ftxt.write("[-- Header write error, error.log for detail. -- ]\n")
-                
+
         #处理消息体，包括附件
-        ThisMailHasHtml = False 
+        ThisMailHasHtml = False
         # print "[for each part of body]"
         # 循环信件中的每一个mime的数据块
         for Part in Msg.walk():
@@ -341,7 +322,8 @@ def main(argv):
                     print "__Part content_____"
                     print body
                     print "__End of part content_____"
-                if ContentType == "text/html":#超文本
+                if ContentType == "text/html":
+                    #超文本只简单的读出各tag的文本部分及主要的回车
                     ThisMailHasHtml = True
                     ftxt.write("[ --"+ContentType+"-- ]\n")
                     #-----------------------------------------------------------------
@@ -391,7 +373,7 @@ def main(argv):
                 else:#不认识的内容
                     ftxt.write("[ --"+ContentType+"-- ]")
                     # 如果能如预期找出文件名的附件，当做附件保存处理
-                    # if 
+                    # if
                     # 不能识别，报错
                     # else:
                     ErrorLog("Unknown ContentType:"+ContentType)
@@ -402,11 +384,11 @@ def main(argv):
         print '\n',
         ftxt.write('['+ '#'*23+ ' End of Mail No.'+ str(MailNo) +  '#'*23+ ']\n')
         ftxt.close()
-        
+
         if EveryThingOK:
             print "All OK, write lastmailno=",MailNo
             config.set("Mail","LastMailNo",MailNo)
-            config.write(open(CurrentPath+"GetAttach.ini", "w"))
+            config.write(open(CurrentPath+"GetMail.ini", "w"))
         else:
             print "Something wrong in mail No.=", MailNo
             break
@@ -415,7 +397,7 @@ def main(argv):
         config.remove_option("Mail","SomethingWrongLastTime")
     else:
         config.set("Mail","SomethingWrongLastTime",MailNo)
-    config.write(open(CurrentPath+"GetAttach.ini", "w"))
+    config.write(open(CurrentPath+"GetMail.ini", "w"))
 
     # raw_input("Press enter to exit > ")
 
