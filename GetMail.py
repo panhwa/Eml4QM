@@ -37,6 +37,7 @@ def Usage():
 
 #保留差错日志
 def ErrorLog(ErrInfo):
+    """write error log to error.log in current path"""
     global ENV_INFO
     global DEBUG
     callerframerecord = inspect.stack()[1]
@@ -52,6 +53,7 @@ def ErrorLog(ErrInfo):
     ErrorFile.close()
 
 def MyUnicode(Data,ChrCode):
+    """Do a little more things than Unicode(). """
     global ENV_INFO
     global DEBUG
     if DEBUG:
@@ -70,9 +72,9 @@ def MyUnicode(Data,ChrCode):
         ErrorLog(Data)
     return unic
 
-# 解码邮件编码格式：=?gb18030?=...
-# python 2.7email库似乎不能解出多个收件人的中文名字？
 def MyMailDecode(HeaderString):
+    """Decode something like '=?gb18030?=...',
+    python 2.7 email model seems can't decode Chinese correctly in headers(from/to/cc/bcc etc.)"""
     global ENV_INFO
     global DEBUG
     if not HeaderString:
@@ -113,16 +115,16 @@ def MyMailDecode(HeaderString):
 HEADS=["Received","From","To","Cc","Bcc","Date","Message-Id","Subject",
     "DKIM-Signature","MIME-Version","Content-Transfer-Encoding","Content-type"]
 
-# 取得并输出头部信息
 def GetHeader(MailMsg,HeaderName):
+    """Get header by name form email message. """
     global ENV_INFO
     global DEBUG
     if DEBUG:
         print 'Header [',HeaderName,']=', MailMsg.get(HeaderName)
     return "[ "+HeaderName+" = "+MyMailDecode(MailMsg.get(HeaderName))+"]\n"
 
-# get email.message object from local file or pop3 server
 def GetMsg(Pop,EmlFolder,MailNo,FromSvr):
+    """get email.message object from local file or pop3 server"""
     # 本地有就读本地，没有就pop上取
     EmlFileName = EmlFolder + str(MailNo)+".eml"
     LocalEmlExist = os.path.isfile(EmlFileName)
@@ -145,8 +147,9 @@ def GetMsg(Pop,EmlFolder,MailNo,FromSvr):
         buf.seek(0)
         msg = email.message_from_file(buf)
     return msg
-#
+
 def SaveEmlFile(Msg,EmlFolder,MailNo,Rewrite):
+    """Save eml file to the EmlFolder. """
     try:
         if not os.path.exists(EmlFolder):
             os.makedirs(EmlFolder)
