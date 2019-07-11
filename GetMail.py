@@ -162,6 +162,32 @@ def SaveEmlFile(Msg,EmlFolder,MailNo,Rewrite):
     except Exception,e:
         ErrorLog("Write eml file error:"+str(e))
 
+class Html2Text(HTMLParser):
+    """Rewrite html in mail into plain text. """
+    #todo 更精细的tag控制
+    Text = ""
+    def handle_starttag(self, tag, attrs):
+        donothing=tag
+        # print "Encountered a start tag:", tag
+
+    def handle_endtag(self, tag):
+        # donothing=tag
+        # print "Encountered an end tag :", tag
+        if tag == 'p':
+            self.Text += ("\n")
+        if tag == 'br':
+            self.Text += ("\n")
+    def handle_data(self, data):
+        if re.match("\S",data):#非空才打印
+            try:
+                self.Text += (data)
+                # self.Text += ('\n')
+            except Exception,e:
+                self.Text += ("[- write text/html error -]")
+                ErrorLog("Mail body write error:")
+                ErrorLog(str(e))
+                # ErrorLog(body)
+                # todo throw sth
 
 # ---------------------------------------------------------------------------
 # 
@@ -249,9 +275,9 @@ def main(argv):
         SaveEmlFile(Msg,EmlFolder,MailNo,False)#todo:配置Rewrite
 
         # 保存邮件体
-        txtname = LocalMailPath + str(MailNo) +"-mail.txt"
-        ftxt = codecs.open(txtname, 'wb', encoding='utf-8')
-        # ftxt = open(txtname, 'wb')
+        MailTxtName = LocalMailPath + str(MailNo) +"-mail.txt"
+        ftxt = codecs.open(MailTxtName, 'wb', encoding='utf-8')
+        # ftxt = open(MailTxtName, 'wb')
         ftxt.write('['+ '#'*26+ ' Mail No.'+ str(MailNo) +  '#'*26+ ']\n')
         # if DEBUG:
             # print "_Mail source code begin_"+'_'*30
@@ -290,11 +316,11 @@ def main(argv):
                 # print "sub",re.sub("[\\\/\\\:\*\?\"\<\>\|\t\r\n]",'',MyMailDecode(name))
                 # print "no sub",fname
                 #加上邮件编号，避免重名，便于检索
-                fname = LocalMailPath + str(MailNo) +"-" + fname
+                fname = LocalMailPath + str(MailNo) +"A-" + fname
                 if SaveAttachment:
                     data = Part.get_payload(decode=True) #　解码出附件数据，然后存储到文件中
                     try:
-                        f = open(fname, 'wb') #注意一定要用wb来打开文件，因为附件一般都是二进制文件
+                        fAttch = open(fname, 'wb') #注意一定要用wb来打开文件，因为附件一般都是二进制文件
                         # todo: 重名处理
                     except Exception,e:
                         # EveryThingOK = False
@@ -302,16 +328,17 @@ def main(argv):
                         #       2、修改原文件名为合法，保留原名主要内容
                         ErrorLog(str(e))
                         ftxt.write("[-- Name of attachment ("+fname+") is invalid, use 'mailno-1' instead. -- ]\n")
-                        fname = LocalMailPath + str(MailNo) +"-"+str(ii)
-                        f = open(fname, 'wb')
+                        fname = LocalMailPath + str(MailNo) +"A-"+str(ii)
+                        fAttch = open(fname, 'wb')
                         ii+=1
-                    f.write(data+"\n")
-                    f.close()
+                    fAttch.write(data)
+                    fAttch.close()
                     ftxt.write("[ -- Attachment '"+ fname+ "' has been saved to "+ LocalMailPath+ " -- ]\n")
                 else:
                     ftxt.write("[ -- Attachment '"+ fname+ "' -- ]\n")
             else:
-            #不是附件，是文本内容 todo:其他媒体类型还不能正确处理
+            #不是附件，是文本内容
+            #todo:其他媒体类型还不能正确处理
                 body = Part.get_payload(decode=True) # 解码出文本内容，直接输出来就可以了。
                 bcode = Part.get_charsets()[0]
                 body = MyUnicode(body,bcode)
@@ -327,36 +354,18 @@ def main(argv):
                     print "__End of part content_____"
                 if ContentType == "text/html":
                     #超文本只简单的读出各tag的文本部分及主要的回车
-                    ThisMailHasHtml = True
+                    #todo 更精确解析或直接另存为html文件
+                    ThisMailHasHtml = True # 无效，见下
                     ftxt.write("[ --"+ContentType+"-- ]\n")
-                    #-----------------------------------------------------------------
-                    class MyHTMLParser(HTMLParser):
-                        def handle_starttag(self, tag, attrs):
-                            donothing=tag
-                            # print "Encountered a start tag:", tag
-
-                        def handle_endtag(self, tag):
-                            # donothing=tag
-                            # print "Encountered an end tag :", tag
-                            if tag == 'p':
-                                ftxt.write("\n")
-                            if tag == 'br':
-                                ftxt.write("\n")
-                        def handle_data(self, data):
-                            if re.match("\S",data):#非空才打印
-                                try:
-                                    ftxt.write(data)
-                                    # ftxt.write('\n')
-                                except Exception,e:
-                                    EveryThingOK = False
-                                    ftxt.write("[- write text/html error -]")
-                                    ErrorLog("Mail body write error:")
-                                    ErrorLog(str(e))
-                                    # ErrorLog(body)
-                    #-----------------------------------------------------------------
-                    # instantiate the parser and fed it some HTML
-                    parser = MyHTMLParser()
-                    parser.feed(body)
+                    # html 转 text
+                    parser = Html2Text()
+                    try:
+                        parser.feed(body)
+                    except Exception,e:
+                        EveryThingOK = False
+                        ErrorLog("parse html error:")
+                        ErrorLog(str(e))
+                    ftxt.write(parser.Text)
                 elif ContentType == "text/plain":#文本
                     if re.match("\S",body) and not ThisMailHasHtml:#非空才打印
                         #todo: 通常text/plain 在先，ThisMailHasHtml不起作用
@@ -372,7 +381,7 @@ def main(argv):
                             # ErrorLog(body)
                 elif ContentType == "text/unknown":
                     #已知bug，python缺省时使用text/plain类型，导致qqmail的部分类型识别错误，暂时修改message.py为text/unknown以捕捉此问题
-                    ErrorLog("Unknown QQMail ContentType, marked, fix lately.")
+                    ErrorLog("text/unknown QQMail ContentType, marked, fix late, maybe. ")
                 else:#不认识的内容
                     ftxt.write("[ --"+ContentType+"-- ]")
                     # 如果能如预期找出文件名的附件，当做附件保存处理
@@ -387,6 +396,15 @@ def main(argv):
         print '\n',
         ftxt.write('['+ '#'*23+ ' End of Mail No.'+ str(MailNo) +  '#'*23+ ']\n')
         ftxt.close()
+        #rename ftxt
+        NewTxtName = str(MailNo) + "M-[" + MyMailDecode(Msg.get("Subject")) + "]-[" + MyMailDecode(Msg.get("Date")) +"].txt"
+        NewTxtName = LocalMailPath + re.sub("[\\\/\\\:\*\?\"\<\>\|\t\r\n]",'',NewTxtName)
+        try:
+            os.rename(MailTxtName,NewTxtName)
+        except Exception,e:
+            ErrorLog("Rename Mail text file error:")
+            ErrorLog("from["+MailTxtName+"]to["+NewTxtName+"]")
+            ErrorLog(str(e))
 
         if EveryThingOK:
             print "All OK, write lastmailno=",MailNo
@@ -400,6 +418,7 @@ def main(argv):
         config.remove_option("Mail","SomethingWrongLastTime")
     else:
         config.set("Mail","SomethingWrongLastTime",MailNo)
+    config.set("Mail","LastTime",time.strftime("%Y-%m-%d %H:%M:%S",time.localtime(time.time())))
     config.write(open(CurrentPath+"GetMail.ini", "w"))
 
     # raw_input("Press enter to exit > ")
