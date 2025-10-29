@@ -264,7 +264,8 @@ def SaveEmlFile(Msg, EmlFolder, MailNo, Rewrite):
     EmlFileName = EmlFolder + str(MailNo)+".eml"
     # 文件不存在或者强制重写
     if not os.path.isfile(EmlFileName) or Rewrite:
-        EmlFile = open(EmlFileName, 'wt')
+    # 2025/10/29 增加charset参数，之前缺省用的系统字符集gbk保存，收gmail时发现不兼容gbk的情况
+        EmlFile = open(EmlFileName, 'wt', encoding="utf-8")
         EmlFile.writelines(Msg.as_string())
         EmlFile.close()
     # except Exception as e:
@@ -314,7 +315,8 @@ def GetCharset(msg):
     charset = msg.get_charset()
     if charset is None:
         content_type = msg.get('Content-Type', '').lower()
-        m = re.match(r".*charset=['\"]*([^'\"]+)['\"]*",
+        # 2025/10/29增加;结束匹配，接收gmail时发现有;分隔的其他信息如：Content-Type: text/plain; charset=ISO-8859-1; format=flowed
+        m = re.match(r".*charset=['\"]*([^'\";]+)['\"]*",
                      content_type, re.M | re.S)
         # m = re.match(r".*",content_type,re.M|re.S)
         if m is not None:
