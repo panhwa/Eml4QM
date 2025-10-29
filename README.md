@@ -1,6 +1,7 @@
 # Eml4QM
 这是一个简单的邮件客户端工具
 
-用python2.7自带的email/pop库开发
+-用python2.7自带的email/pop库开发
+已用python3改写
 
 用于（准）实时同步全部邮件到本地保存
